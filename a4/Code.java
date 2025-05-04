@@ -50,7 +50,7 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 	private GLCanvas myCanvas;
 	private int renderingProgram, renderingProgramCubeMap;
 	private int vao[] = new int[1];
-	private int vbo[] = new int[12];
+	private int vbo[] = new int[18];
 
 	private Camera camera;
 	private Vector3f cameraLoc = new Vector3f(0, 1.75f, 5f);
@@ -119,6 +119,9 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 	private int groundTexture;
 	private int axisTexture;
 	private int skyboxTexture;
+
+	private ImportedModel pyramidModel;
+	private int numPyramidVertices;
 
 	private int numObjVerticesUfo, numObjVerticesCow;
 	private ImportedModel ufoModel, cowModel;
@@ -255,6 +258,43 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 
 		int sLoc = gl.glGetUniformLocation(renderingProgram1, "shadowMVP");
 
+		// ---------------------- Pyramid ----------------------
+		Matrix4f pyramidMat = new Matrix4f();
+		pyramidMat.identity()
+				.translate(-5.0f, 1.5f, -5.0f) // Position pyramid on top of the cube
+				.scale(1.025f, 0.5f, 1.025f); // Adjust scale as needed
+
+		shadowMVP.identity()
+				.mul(lightPmat)
+				.mul(lightVmat)
+				.mul(pyramidMat);
+
+		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[15]); // Pyramid vertices
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+
+		gl.glDrawArrays(GL_TRIANGLES, 0, numPyramidVertices);
+
+		Matrix4f cubeMat = new Matrix4f();
+		cubeMat.identity()
+				.translate(-5.0f, 0.5f, -5.0f)
+				.scale(0.5f);
+
+		shadowMVP.identity()
+				.mul(lightPmat)
+				.mul(lightVmat)
+				.mul(cubeMat);
+
+		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[11]); // Cube vertices
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+
+		gl.glDrawArrays(GL_TRIANGLES, 0, 36);
+
 		// Draw UFO
 		Matrix4f ufoMat = new Matrix4f();
 		ufoMat.identity()
@@ -384,6 +424,96 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		gl.glDrawArrays(GL_TRIANGLES, 0, 6);
 		gl.glEnable(GL_CULL_FACE);
 
+		// ---------------------- Cube ----------------------
+		Matrix4f cubeMat = new Matrix4f();
+		cubeMat.identity()
+				.translate(-5.0f, 0.5f, -5.0f) // Back left of the plane
+				.scale(0.5f); // Adjust scale as needed
+
+		mMat.set(cubeMat);
+		mMat.invert(invTrMat);
+		invTrMat.transpose(invTrMat);
+
+		// Calculate shadow MVP for the cube
+		Matrix4f cubeShadowMVP = new Matrix4f();
+		cubeShadowMVP.identity()
+				.mul(b) // Include bias matrix
+				.mul(lightPmat)
+				.mul(lightVmat)
+				.mul(mMat);
+
+		gl.glUniformMatrix4fv(sLoc, 1, false, cubeShadowMVP.get(vals));
+		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
+		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
+
+		// Cube vertices
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[12]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+
+		// Cube texture coordinates
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[13]);
+		gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(1);
+
+		// Cube normals
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[14]);
+		gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(2);
+
+		// Bind cube texture
+		gl.glActiveTexture(GL_TEXTURE0);
+		gl.glBindTexture(GL_TEXTURE_2D, groundTexture); // Replace with a cube-specific texture if available
+		gl.glUniform1i(sampLoc, 0);
+
+		// Render the cube
+		gl.glDrawArrays(GL_TRIANGLES, 0, 36);
+
+		// ---------------------- Pyramid ----------------------
+		Matrix4f pyramidMat = new Matrix4f();
+		pyramidMat.identity()
+				.translate(-5.0f, 1.5f, -5.0f) // Position pyramid on top of the cube
+				.scale(1.025f, 0.5f, 1.025f); // Adjust scale as needed
+
+		mMat.set(pyramidMat);
+		mMat.invert(invTrMat);
+		invTrMat.transpose(invTrMat);
+
+		// Calculate shadow MVP for the pyramid
+		Matrix4f pyramidShadowMVP = new Matrix4f();
+		pyramidShadowMVP.identity()
+				.mul(b) // Include bias matrix
+				.mul(lightPmat)
+				.mul(lightVmat)
+				.mul(mMat);
+
+		gl.glUniformMatrix4fv(sLoc, 1, false, pyramidShadowMVP.get(vals));
+		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
+		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
+
+		// Pyramid vertices
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[15]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+
+		// Pyramid texture coordinates
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[16]);
+		gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(1);
+
+		// Pyramid normals
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[17]);
+		gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(2);
+
+		// Bind pyramid texture
+		gl.glActiveTexture(GL_TEXTURE0);
+		gl.glBindTexture(GL_TEXTURE_2D, groundTexture); // Replace with a pyramid-specific texture if available
+		gl.glUniform1i(sampLoc, 0);
+
+		// Render the pyramid
+		gl.glDrawArrays(GL_TRIANGLES, 0, numPyramidVertices);
+
 		// ---------------------- UFO ----------------------
 		Matrix4f ufoMat = new Matrix4f();
 		ufoMat.identity()
@@ -501,6 +631,8 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		ufoModel = new ImportedModel("ufo.obj");
 		cowModel = new ImportedModel("cow.obj");
 
+		pyramidModel = new ImportedModel("pyr.obj");
+
 		renderingProgram = Utils.createShaderProgram("a4/vertShader.glsl", "a4/fragShader.glsl");
 		renderingProgramCubeMap = Utils.createShaderProgram("a4/vertCShader.glsl", "a4/fragCShader.glsl");
 
@@ -604,6 +736,82 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 				-1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f,
 				1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f
 		};
+
+		float[] cube2VertexPositions = {
+				// Front face
+				-1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f,
+				// Back face
+				-1.0f, -1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f,
+				1.0f, 1.0f, -1.0f, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f,
+				// Left face
+				-1.0f, -1.0f, -1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f,
+				-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f,
+				// Right face
+				1.0f, -1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, -1.0f,
+				// Top face
+				-1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f,
+				// Bottom face
+				-1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f,
+				1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, -1.0f
+		};
+
+		// Texture coordinates for the cube
+		float[] cube2TexCoords = {
+				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				// Repeat for all 6 faces of the cube
+				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f
+		};
+
+		// Normals for the cube
+		float[] cube2Normals = {
+				0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
+				0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
+				// Repeat for all 6 faces of the cube
+				1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+				0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+				-1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
+				-1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
+				0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
+				0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
+				0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+				0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f
+		};
+
+		// ---------------------- Pyramid ----------------------
+		numPyramidVertices = pyramidModel.getNumVertices();
+		Vector3f[] pyramidVertices = pyramidModel.getVertices();
+		Vector2f[] pyramidTexCoords = pyramidModel.getTexCoords();
+		Vector3f[] pyramidNormals = pyramidModel.getNormals();
+
+		float[] pvaluesPyramid = new float[numPyramidVertices * 3];
+		float[] tvaluesPyramid = new float[numPyramidVertices * 2];
+		float[] nvaluesPyramid = new float[numPyramidVertices * 3];
+
+		for (int i = 0; i < numPyramidVertices; i++) {
+			pvaluesPyramid[i * 3] = (float) (pyramidVertices[i]).x();
+			pvaluesPyramid[i * 3 + 1] = (float) (pyramidVertices[i]).y();
+			pvaluesPyramid[i * 3 + 2] = (float) (pyramidVertices[i]).z();
+			tvaluesPyramid[i * 2] = (float) (pyramidTexCoords[i]).x();
+			tvaluesPyramid[i * 2 + 1] = (float) (pyramidTexCoords[i]).y();
+			nvaluesPyramid[i * 3] = (float) (pyramidNormals[i]).x();
+			nvaluesPyramid[i * 3 + 1] = (float) (pyramidNormals[i]).y();
+			nvaluesPyramid[i * 3 + 2] = (float) (pyramidNormals[i]).z();
+		}
 
 		// ---------------------- Axis Lines ----------------------
 		float[] axisVertices = {
@@ -761,6 +969,34 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[11]);
 		FloatBuffer cvertBuf = Buffers.newDirectFloatBuffer(cubeVertexPositions);
 		gl.glBufferData(GL_ARRAY_BUFFER, cvertBuf.limit() * 4, cvertBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[12]);
+		FloatBuffer c2vertBuf = Buffers.newDirectFloatBuffer(cube2VertexPositions);
+		gl.glBufferData(GL_ARRAY_BUFFER, c2vertBuf.limit() * 4, c2vertBuf, GL_STATIC_DRAW);
+
+		// Texture coordinates buffer for the cube
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[13]); // Use an unused VBO slot
+		FloatBuffer cube2TexBuf = Buffers.newDirectFloatBuffer(cube2TexCoords);
+		gl.glBufferData(GL_ARRAY_BUFFER, cube2TexBuf.limit() * 4, cube2TexBuf, GL_STATIC_DRAW);
+
+		// Normals buffer for the cube
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[14]); // Use another unused VBO slot
+		FloatBuffer cube2NorBuf = Buffers.newDirectFloatBuffer(cube2Normals);
+		gl.glBufferData(GL_ARRAY_BUFFER, cube2NorBuf.limit() * 4, cube2NorBuf, GL_STATIC_DRAW);
+
+		// ---------------------- Pyramid ----------------------
+		// Bind pyramid data to buffers
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[15]); // Pyramid vertices
+		FloatBuffer pyramidVertBuf = Buffers.newDirectFloatBuffer(pvaluesPyramid);
+		gl.glBufferData(GL_ARRAY_BUFFER, pyramidVertBuf.limit() * 4, pyramidVertBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[16]); // Pyramid texture coordinates
+		FloatBuffer pyramidTexBuf = Buffers.newDirectFloatBuffer(tvaluesPyramid);
+		gl.glBufferData(GL_ARRAY_BUFFER, pyramidTexBuf.limit() * 4, pyramidTexBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[17]); // Pyramid normals
+		FloatBuffer pyramidNorBuf = Buffers.newDirectFloatBuffer(nvaluesPyramid);
+		gl.glBufferData(GL_ARRAY_BUFFER, pyramidNorBuf.limit() * 4, pyramidNorBuf, GL_STATIC_DRAW);
 
 	}
 
