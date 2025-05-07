@@ -1,4 +1,5 @@
 #version 430
+// lighting fragment shader with shadow
 
 in vec3 varyingNormal, varyingLightDir, varyingVertPos, varyingHalfVec;
 in vec4 shadow_coord;

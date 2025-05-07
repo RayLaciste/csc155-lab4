@@ -5,6 +5,7 @@ in vec2 tc;
 in vec3 varyingNormal;
 in vec3 varyingLightDir;
 in vec3 varyingVertPos;
+in vec3 varyingTangent;
 in vec4 shadow_coord;
 out vec4 fragColor;
 
@@ -37,7 +38,7 @@ layout (binding = 1) uniform sampler2DShadow shadowTex;
 void main(void)
 {	// normalize the light, normal, and view vectors:
 	vec3 L = normalize(varyingLightDir);
-	vec3 N = normalize(varyingNormal);
+	vec3 N = calcNewNormal();
 	vec3 V = normalize(-v_matrix[3].xyz - varyingVertPos);
 	
 	// compute light reflection vector, with respect N:
@@ -58,4 +59,5 @@ void main(void)
 	vec3 diffuse = light.diffuse.xyz * material.diffuse.xyz * max(cosTheta,0.0);
 	vec3 specular = light.specular.xyz * material.specular.xyz * pow(max(cosPhi,0.0), material.shininess);
 
-	fragColor = vec4(texColor.xyz * (ambient + notInShadow * (diffuse + specular)), 1.0);}
+	fragColor = vec4(texColor.xyz * (ambient + notInShadow * (diffuse + specular)), 1.0);
+}

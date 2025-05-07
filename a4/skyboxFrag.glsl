@@ -1,4 +1,5 @@
 #version 430
+// cubemap frag
 
 in vec3 tc;
 out vec4 fragColor;

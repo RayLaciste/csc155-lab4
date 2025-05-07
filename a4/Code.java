@@ -1,12 +1,9 @@
 package a4;
 
-import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
-import java.nio.*;
-import javax.swing.*;
-import java.lang.Math;
+import javax.swing.JFrame;
 
 import static com.jogamp.opengl.GL.GL_ARRAY_BUFFER;
+import static com.jogamp.opengl.GL.GL_BACK;
 import static com.jogamp.opengl.GL.GL_CCW;
 import static com.jogamp.opengl.GL.GL_CLAMP_TO_EDGE;
 import static com.jogamp.opengl.GL.GL_COLOR_BUFFER_BIT;
@@ -21,12 +18,14 @@ import static com.jogamp.opengl.GL.GL_FRONT;
 import static com.jogamp.opengl.GL.GL_LEQUAL;
 import static com.jogamp.opengl.GL.GL_LESS;
 import static com.jogamp.opengl.GL.GL_LINEAR;
+import static com.jogamp.opengl.GL.GL_LINES;
+import static com.jogamp.opengl.GL.GL_LINE_SMOOTH;
 import static com.jogamp.opengl.GL.GL_NONE;
 import static com.jogamp.opengl.GL.GL_POLYGON_OFFSET_FILL;
-import static com.jogamp.opengl.GL.GL_REPEAT;
 import static com.jogamp.opengl.GL.GL_STATIC_DRAW;
 import static com.jogamp.opengl.GL.GL_TEXTURE0;
 import static com.jogamp.opengl.GL.GL_TEXTURE1;
+import static com.jogamp.opengl.GL.GL_TEXTURE2;
 import static com.jogamp.opengl.GL.GL_TEXTURE_2D;
 import static com.jogamp.opengl.GL.GL_TEXTURE_CUBE_MAP;
 import static com.jogamp.opengl.GL.GL_TEXTURE_MAG_FILTER;
@@ -39,72 +38,75 @@ import static com.jogamp.opengl.GL2ES2.GL_DEPTH_COMPONENT;
 import static com.jogamp.opengl.GL2ES2.GL_TEXTURE_COMPARE_FUNC;
 import static com.jogamp.opengl.GL2ES2.GL_TEXTURE_COMPARE_MODE;
 import static com.jogamp.opengl.GL2GL3.GL_TEXTURE_CUBE_MAP_SEAMLESS;
-import static com.jogamp.opengl.GL4.*;
-import com.jogamp.opengl.*;
-import com.jogamp.opengl.util.*;
-import com.jogamp.opengl.awt.GLCanvas;
+
+import java.nio.FloatBuffer;
+import java.lang.Math;
+import java.awt.event.*;
+
 import com.jogamp.common.nio.Buffers;
+import com.jogamp.opengl.GL4;
+import com.jogamp.opengl.GLAutoDrawable;
+import com.jogamp.opengl.GLContext;
+import com.jogamp.opengl.GLEventListener;
+import com.jogamp.opengl.awt.GLCanvas;
+import com.jogamp.opengl.util.Animator;
+
 import org.joml.*;
 
 public class Code extends JFrame implements GLEventListener, KeyListener {
+	// game initialization variables
 	private GLCanvas myCanvas;
-	private int renderingProgram, renderingProgramCubeMap;
+	private int renderingProgram, renderingProgramCubeMap, renderingProgramShadow, renderingProgramNoTex;
 	private int vao[] = new int[1];
-	private int vbo[] = new int[18];
-
+	private int vbo[] = new int[30];
 	private Camera camera;
-	private Vector3f cameraLoc = new Vector3f(0, 1.75f, 5f);
 
-	// ---------------------- Camera ----------------------
-	private float cameraPitch = 0.0f;
-	private float cameraYaw = 0.0f;
+	// variables for imported models and textures
+	private int numObjVertices;
+	private ImportedModel ufoModel, cowModel;
+	private int skyboxTexture, groundTexture, ufoTexture, cowTexture;
+	private int groundNormalMap;
 
-	// ---------------------- TIME ----------------------
+	// display function variables
+	private FloatBuffer vals = Buffers.newDirectFloatBuffer(16);
+	private Matrix4f pMat = new Matrix4f();
+	private Matrix4f vMat = new Matrix4f();
+	private Matrix4f mMat = new Matrix4f();
+	private Matrix4f invTrMat = new Matrix4f();
+	private int mLoc, pLoc, vLoc, nLoc, acLoc;
+	private int globalAmbLoc, ambLoc, diffLoc, specLoc, posLoc, mambLoc, mdiffLoc, mspecLoc, mshiLoc;
+	private int sampLoc, normalMapLoc, shadowMapLoc;
+	private float aspect;
+
+	// time tracking variables
 	private double startTime = 0;
 	private double prevTime = 0;
 	private double deltaTime = 0;
 	private double elapsedTime = 0;
 	private double currentTime = 0;
-	// ---------------------- ----------------------
 
-	// allocate variables for display() function
-	private FloatBuffer vals = Buffers.newDirectFloatBuffer(16);
-	private Matrix4f pMat = new Matrix4f(); // perspective matrix
-	private Matrix4f vMat = new Matrix4f(); // view matrix
-	private Matrix4f mMat = new Matrix4f(); // model matrix
-	private Matrix4f invTrMat = new Matrix4f(); // inverse-transpose
-	private int mLoc, vLoc, pLoc, nLoc, sampLoc;
-	private int globalAmbLoc, ambLoc, diffLoc, specLoc, posLoc, mambLoc, mdiffLoc, mspecLoc, mshiLoc;
-	private float aspect;
+	// input state variables
+	private boolean renderAxes = false;
+	private boolean spaceWasPressed = false;
+
+	// initial positions
+	private Vector3f cameraLoc = new Vector3f(0, 1.75f, 5f);
+	private Vector3f initialLightPos = new Vector3f(3.0f, 8.0f, 2.0f);
+	private Vector3f initialUfoPos = new Vector3f(0, 2.0f, 0);
+	private Vector3f initialCowPos = new Vector3f(0, 1.5f, 0);
+
+	// for the light to point at
+	private Vector3f origin = new Vector3f(0, 0, 0);
+	private Vector3f upVec = new Vector3f(0, 1, 0);
+
+	// Light control variables
+	private float lightSpeed = 1f;
 	private Vector3f currentLightPos = new Vector3f();
 	private float[] lightPos = new float[3];
+	private boolean lightToggleWasPressed = false;
+	private boolean renderLight = true;
 
-	// ---------------------- LIGHTING ----------------------
-	float lightRotationAngle = 0;
-
-	// white light properties
-	float[] globalAmbient = new float[] { 1.0f, 1.0f, 1.0f, 1.0f };
-	// float[] lightAmbient = new float[] { 0.1f, 0.1f, 0.1f, 1.0f };
-	// float[] lightDiffuse = new float[] { 1.0f, 1.0f, 1.0f, 1.0f };
-	// float[] lightSpecular = new float[] { 1.0f, 1.0f, 1.0f, 1.0f };
-	float[] lightAmbient = new float[] { 0.3f, 0.3f, 0.3f, 1.0f };
-	float[] lightDiffuse = new float[] { 1.0f, 1.0f, 0.9f, 1.0f };
-	float[] lightSpecular = new float[] { 1.0f, 1.0f, 1.0f, 1.0f };
-
-	// Silver material
-	float[] matAmb = Utils.silverAmbient();
-	float[] matDif = Utils.silverDiffuse();
-	float[] matSpe = Utils.silverSpecular();
-	float matShi = Utils.silverShininess();
-
-	// custom cow hide material
-	float[] cowMatAmb = Utils.cowAmbient(); // or Utils.spottedCowAmbient()
-	float[] cowMatDif = Utils.cowDiffuse(); // or Utils.spottedCowDiffuse()
-	float[] cowMatSpe = Utils.cowSpecular(); // or Utils.spottedCowSpecular()
-	float cowMatShi = Utils.cowShininess(); // or Utils.spottedCowShininess()
-
-	// ---------------------- Shadows ----------------------
-	private int renderingProgram1, renderingProgram2;
+	// shadow stuff
 	private int scSizeX, scSizeY;
 	private int[] shadowTex = new int[1];
 	private int[] shadowBuffer = new int[1];
@@ -112,83 +114,94 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 	private Matrix4f lightPmat = new Matrix4f();
 	private Matrix4f shadowMVP = new Matrix4f();
 	private Matrix4f b = new Matrix4f();
+	private int sLoc;
 
-	// ---------------------- Models and Textures ----------------------
-	private int ufoTexture;
-	private int cowTexture;
-	private int groundTexture;
-	private int axisTexture;
-	private int skyboxTexture;
+	// white light properties
+	private float[] globalAmbient = new float[] { 0.6f, 0.6f, 0.6f, 0.6f };
+	private float[] lightAmbient = new float[] { 0.3f, 0.3f, 0.3f, 1.0f };
+	private float[] lightDiffuse = new float[] { 1.0f, 1.0f, 0.9f, 1.0f };
+	private float[] lightSpecular = new float[] { 1.0f, 1.0f, 1.0f, 1.0f };
 
-	private ImportedModel pyramidModel;
-	private int numPyramidVertices;
+	// Material properties
+	private float[] matAmb = Utils.silverAmbient();
+	private float[] matDif = Utils.silverDiffuse();
+	private float[] matSpe = Utils.silverSpecular();
+	private float matShi = Utils.silverShininess();
 
-	private int numObjVerticesUfo, numObjVerticesCow;
-	private ImportedModel ufoModel, cowModel;
+	// custom cow material
+	private float[] cowMatAmb = Utils.cowAmbient();
+	private float[] cowMatDif = Utils.cowDiffuse();
+	private float[] cowMatSpe = Utils.cowSpecular();
+	private float cowMatShi = Utils.cowShininess();
 
-	// Axes
-	private boolean visibleAxis = true;
-	private float axesX = 0.0f;
-
-	// ufo
+	// animation variables
 	private float ufoPositionX = 0.0f;
 	private float ufoPositionY = 2.0f;
 	private float ufoPositionZ = 0.0f;
-	private float ufoMovementSpeed = 0.5f;
-	private float ufoRotationSpeed = 0.0f; // ! Initially 35.0f
 	private float ufoRotationY = 0.0f;
-	private float ufoWave = 2.0f;
-
-	// cow rotation angles
+	private float ufoRotationSpeed = 35.0f;
 	private float cowRotationX = 0.0f;
 	private float cowRotationY = 0.0f;
-	private float cowRotationSpeed = 0.0f; // ! Initially 50.0f
-
-	// ---------------------- ----------------------
-
-	private Matrix4fStack mvStack = new Matrix4fStack(16);
+	private float cowRotationSpeed = 50.0f;
 
 	public Code() {
-		setTitle("Lab 3");
+		// setup window
+		setTitle("CSC155 - Assignment 4");
 		setSize(1200, 1200);
+		setLocationRelativeTo(null);
+		setDefaultCloseOperation(EXIT_ON_CLOSE);
+
+		// setup GLCanvas
 		myCanvas = new GLCanvas();
 		myCanvas.addGLEventListener(this);
 		myCanvas.addKeyListener(this);
+
 		this.add(myCanvas);
 		this.setVisible(true);
-		Animator animator = new Animator(myCanvas);
-		animator.start();
+
+		startTime = System.currentTimeMillis();
+		prevTime = startTime;
+
+		Animator animtr = new Animator(myCanvas);
+		animtr.start();
 	}
 
+	@Override
 	public void display(GLAutoDrawable drawable) {
-		GL4 gl = (GL4) GLContext.getCurrentGL();
-
-		// Time Values
+		// Update time tracking
 		currentTime = System.currentTimeMillis();
 		elapsedTime = currentTime - startTime;
-		deltaTime = (currentTime - prevTime) / 1000;
+		deltaTime = (currentTime - prevTime) / 1000.0; // Convert to seconds
 		prevTime = currentTime;
 
-		// & camera's view matrix
+		// Update animation values
+		ufoRotationY += ufoRotationSpeed * (float) deltaTime;
+		cowRotationX += cowRotationSpeed * (float) deltaTime;
+		cowRotationY += cowRotationSpeed * (float) deltaTime;
+
+		// update light position
+		currentLightPos.set(initialLightPos);
+
+		// update camera's view matrix
 		camera.updateViewMatrix();
 		vMat = camera.getViewMatrix();
 
-		// animation values
-		cowRotationX += cowRotationSpeed * deltaTime;
-		cowRotationY += cowRotationSpeed * deltaTime;
-		ufoRotationY += ufoRotationSpeed * deltaTime;
+		// render all of the objects
+		renderScene();
+	}
 
-		// & Light Position
-		// currentLightPos.set(ufoPositionX, ufoPositionY, ufoPositionZ);
-		currentLightPos.set(3.0f, 8.0f, 2.0f);
+	public void renderScene() {
+		GL4 gl = (GL4) GLContext.getCurrentGL();
 
-		// & Light perspective setup
-		Vector3f origin = new Vector3f(0.0f, 0.0f, 0.0f);
-		Vector3f up = new Vector3f(0.0f, 1.0f, 0.0f);
-		lightVmat.identity().setLookAt(currentLightPos, origin, up);
-		lightPmat.identity().setPerspective((float) Math.toRadians(60.0f), aspect, 0.1f, 1000.0f);
+		gl.glClear(GL_COLOR_BUFFER_BIT);
+		gl.glClearColor(0, 0.2f, 0.2f, 1);
+		gl.glClear(GL_DEPTH_BUFFER_BIT);
 
-		// ! Pass 1: Render shadow map
+		// Setup light perspective
+		lightVmat.identity().setLookAt(currentLightPos, origin, upVec);
+		lightPmat.identity().setPerspective((float) Math.toRadians(60), aspect, 0.1f, 1000.0f);
+
+		// Render shadow map
 		gl.glBindFramebuffer(GL_FRAMEBUFFER, shadowBuffer[0]);
 		gl.glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadowTex[0], 0);
 
@@ -197,159 +210,42 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		gl.glEnable(GL_POLYGON_OFFSET_FILL);
 		gl.glPolygonOffset(3.0f, 5.0f);
 
-		passOne();
+		renderShadows();
 
 		gl.glDisable(GL_POLYGON_OFFSET_FILL);
 
-		// ! Pass 2: Render scene with shadows
 		gl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		gl.glActiveTexture(GL_TEXTURE1);
 		gl.glBindTexture(GL_TEXTURE_2D, shadowTex[0]);
 
 		gl.glDrawBuffer(GL_FRONT);
 
-		// Clear buffers for screen rendering
-		gl.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		gl.glClear(GL_COLOR_BUFFER_BIT);
-		gl.glClear(GL_DEPTH_BUFFER_BIT);
-
-		gl.glEnable(GL_DEPTH_TEST);
-		gl.glDepthFunc(GL_LEQUAL);
-
-		// ---------------------- Skybox ----------------------
-		renderSkybox();
-
-		// ---------------------- Scene (with shadows) ----------------------
-		passTwo();
+		// Main rendering pass
+		drawSkybox();
+		drawWorldAxes();
+		drawLight();
+		drawScene();
 	}
 
-	private void renderSkybox() {
+	private void renderShadows() {
 		GL4 gl = (GL4) GLContext.getCurrentGL();
-		gl.glUseProgram(renderingProgramCubeMap);
+		gl.glUseProgram(renderingProgramShadow);
 
-		gl.glDepthMask(false);
-
-		int vLocCubeMap = gl.glGetUniformLocation(renderingProgramCubeMap, "v_matrix");
-		gl.glUniformMatrix4fv(vLocCubeMap, 1, false, vMat.get(vals));
-		int pLocCubeMap = gl.glGetUniformLocation(renderingProgramCubeMap, "p_matrix");
-		gl.glUniformMatrix4fv(pLocCubeMap, 1, false, pMat.get(vals));
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[11]);
-		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(0);
-
-		gl.glActiveTexture(GL_TEXTURE0);
-		gl.glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTexture);
-
-		gl.glEnable(GL_CULL_FACE);
-		gl.glFrontFace(GL_CCW);
-		gl.glDrawArrays(GL_TRIANGLES, 0, 36);
-
-		gl.glDepthMask(true);
-		gl.glDepthFunc(GL_LESS);
-	}
-
-	public void passOne() {
-		GL4 gl = (GL4) GLContext.getCurrentGL();
-
-		gl.glUseProgram(renderingProgram1);
+		sLoc = gl.glGetUniformLocation(renderingProgramShadow, "shadowMVP");
 
 		gl.glClear(GL_DEPTH_BUFFER_BIT);
-
-		int sLoc = gl.glGetUniformLocation(renderingProgram1, "shadowMVP");
-
-		// ---------------------- Pyramid ----------------------
-		Matrix4f pyramidMat = new Matrix4f();
-		pyramidMat.identity()
-				.translate(-5.0f, 1.5f, -5.0f) // Position pyramid on top of the cube
-				.scale(1.025f, 0.5f, 1.025f); // Adjust scale as needed
-
-		shadowMVP.identity()
-				.mul(lightPmat)
-				.mul(lightVmat)
-				.mul(pyramidMat);
-
-		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[15]); // Pyramid vertices
-		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(0);
-
-		gl.glDrawArrays(GL_TRIANGLES, 0, numPyramidVertices);
-
-		Matrix4f cubeMat = new Matrix4f();
-		cubeMat.identity()
-				.translate(-5.0f, 0.5f, -5.0f)
-				.scale(0.5f);
-
-		shadowMVP.identity()
-				.mul(lightPmat)
-				.mul(lightVmat)
-				.mul(cubeMat);
-
-		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[11]); // Cube vertices
-		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(0);
-
-		gl.glDrawArrays(GL_TRIANGLES, 0, 36);
-
-		// Draw UFO
-		Matrix4f ufoMat = new Matrix4f();
-		ufoMat.identity()
-				.translate(ufoPositionX, ufoPositionY, ufoPositionZ)
-				.scale(0.5f)
-				.rotateY((float) Math.toRadians(ufoRotationY));
-
-		shadowMVP.identity()
-				.mul(lightPmat)
-				.mul(lightVmat)
-				.mul(ufoMat);
-
-		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[5]);
-		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(0);
-
 		gl.glEnable(GL_CULL_FACE);
 		gl.glFrontFace(GL_CCW);
 		gl.glEnable(GL_DEPTH_TEST);
 		gl.glDepthFunc(GL_LEQUAL);
 
-		gl.glDrawArrays(GL_TRIANGLES, 0, ufoModel.getNumVertices());
+		// draw ground plane
+		mMat.identity();
 
-		// Draw Cow
-		Matrix4f cowMat = new Matrix4f();
-		cowMat.identity()
-				.translate(0, 0.0f, 0) // Adjust cow position to be on the ground
-				.scale(0.05f)
-				.rotateX((float) Math.toRadians(cowRotationX))
-				.rotateY((float) Math.toRadians(cowRotationY))
-				.rotateY((float) Math.toRadians(-90.0f));
-
-		shadowMVP.identity()
-				.mul(lightPmat)
-				.mul(lightVmat)
-				.mul(cowMat);
-
-		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[8]);
-		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(0);
-
-		gl.glDrawArrays(GL_TRIANGLES, 0, cowModel.getNumVertices());
-
-		// Draw Ground - important to include it in the shadow pass
-		Matrix4f groundMat = new Matrix4f();
-		groundMat.identity();
-
-		shadowMVP.identity()
-				.mul(lightPmat)
-				.mul(lightVmat)
-				.mul(groundMat);
+		shadowMVP.identity();
+		shadowMVP.mul(lightPmat);
+		shadowMVP.mul(lightVmat);
+		shadowMVP.mul(mMat);
 
 		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
 
@@ -358,55 +254,100 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		gl.glEnableVertexAttribArray(0);
 
 		gl.glDrawArrays(GL_TRIANGLES, 0, 6);
+
+		// draw UFO
+		mMat.identity();
+		mMat.translate(ufoPositionX, ufoPositionY, ufoPositionZ);
+		mMat.scale(0.5f);
+		mMat.rotateY((float) Math.toRadians(ufoRotationY));
+
+		shadowMVP.identity();
+		shadowMVP.mul(lightPmat);
+		shadowMVP.mul(lightVmat);
+		shadowMVP.mul(mMat);
+
+		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[5]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+
+		gl.glDrawArrays(GL_TRIANGLES, 0, ufoModel.getNumVertices());
+
+		// draw cow
+		mMat.identity();
+		mMat.translate(initialCowPos);
+		mMat.scale(0.05f);
+		mMat.rotateX((float) Math.toRadians(cowRotationX));
+		mMat.rotateY((float) Math.toRadians(cowRotationY));
+		mMat.rotateY((float) Math.toRadians(-90.0f));
+
+		shadowMVP.identity();
+		shadowMVP.mul(lightPmat);
+		shadowMVP.mul(lightVmat);
+		shadowMVP.mul(mMat);
+
+		gl.glUniformMatrix4fv(sLoc, 1, false, shadowMVP.get(vals));
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[8]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+
+		gl.glDrawArrays(GL_TRIANGLES, 0, cowModel.getNumVertices());
 	}
 
-	public void passTwo() {
+	private void drawScene() {
 		GL4 gl = (GL4) GLContext.getCurrentGL();
-
 		gl.glUseProgram(renderingProgram);
 
-		// Uniform Variables
 		mLoc = gl.glGetUniformLocation(renderingProgram, "m_matrix");
 		vLoc = gl.glGetUniformLocation(renderingProgram, "v_matrix");
 		pLoc = gl.glGetUniformLocation(renderingProgram, "p_matrix");
 		nLoc = gl.glGetUniformLocation(renderingProgram, "norm_matrix");
+		sLoc = gl.glGetUniformLocation(renderingProgram, "shadowMVP");
 		sampLoc = gl.glGetUniformLocation(renderingProgram, "samp");
-		int sLoc = gl.glGetUniformLocation(renderingProgram, "shadowMVP");
 
-		// Pass perspective matrix to shader
-		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
-		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+		sampLoc = gl.glGetUniformLocation(renderingProgram, "diffuseTexture");
+		normalMapLoc = gl.glGetUniformLocation(renderingProgram, "normalMap");
+		shadowMapLoc = gl.glGetUniformLocation(renderingProgram, "shadowMap");
 
-		// Install lighting
-		installLights();
+		installLights(renderingProgram);
 
-		// ---------------------- Ground ----------------------
+		// Set shadow map sampler
+		gl.glUniform1i(shadowMapLoc, 1);
+
+		gl.glEnable(GL_CULL_FACE);
+		gl.glFrontFace(GL_CCW);
+		gl.glEnable(GL_DEPTH_TEST);
+		gl.glDepthFunc(GL_LEQUAL);
+
+		// Draw ground
 		gl.glDisable(GL_CULL_FACE);
 
-		Matrix4f groundMat = new Matrix4f();
-		groundMat.identity();
+		mMat.identity();
 
-		groundMat.invert(invTrMat);
+		mMat.invert(invTrMat);
 		invTrMat.transpose(invTrMat);
 
-		// Calculate shadow MVP for ground - THIS IS A KEY FIX
 		Matrix4f groundShadowMVP = new Matrix4f();
 		groundShadowMVP.identity()
-				.mul(b) // Include bias matrix
+				.mul(b)
 				.mul(lightPmat)
 				.mul(lightVmat)
-				.mul(groundMat);
+				.mul(mMat);
 
-		gl.glUniformMatrix4fv(sLoc, 1, false, groundShadowMVP.get(vals));
-		gl.glUniformMatrix4fv(mLoc, 1, false, groundMat.get(vals));
+		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
+		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
 		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
+		gl.glUniformMatrix4fv(sLoc, 1, false, groundShadowMVP.get(vals));
 
-		// Ground Vertices
+		// Ground vertices
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
 		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(0);
 
-		// Ground Textures
+		// Ground texture coordinates
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
 		gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(1);
@@ -416,189 +357,97 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(2);
 
-		// Binding Texture
+		// Bind textures
 		gl.glActiveTexture(GL_TEXTURE0);
 		gl.glBindTexture(GL_TEXTURE_2D, groundTexture);
 		gl.glUniform1i(sampLoc, 0);
 
+		gl.glActiveTexture(GL_TEXTURE2);
+		gl.glBindTexture(GL_TEXTURE_2D, groundNormalMap);
+		gl.glUniform1i(normalMapLoc, 2);
+
 		gl.glDrawArrays(GL_TRIANGLES, 0, 6);
 		gl.glEnable(GL_CULL_FACE);
 
-		// ---------------------- Cube ----------------------
-		Matrix4f cubeMat = new Matrix4f();
-		cubeMat.identity()
-				.translate(-5.0f, 0.5f, -5.0f) // Back left of the plane
-				.scale(0.5f); // Adjust scale as needed
+		// Draw UFO
+		mMat.identity();
+		mMat.translate(ufoPositionX, ufoPositionY, ufoPositionZ);
+		mMat.scale(0.5f);
+		mMat.rotateY((float) Math.toRadians(ufoRotationY));
 
-		mMat.set(cubeMat);
 		mMat.invert(invTrMat);
 		invTrMat.transpose(invTrMat);
 
-		// Calculate shadow MVP for the cube
-		Matrix4f cubeShadowMVP = new Matrix4f();
-		cubeShadowMVP.identity()
-				.mul(b) // Include bias matrix
-				.mul(lightPmat)
-				.mul(lightVmat)
-				.mul(mMat);
-
-		gl.glUniformMatrix4fv(sLoc, 1, false, cubeShadowMVP.get(vals));
-		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
-		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
-
-		// Cube vertices
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[12]);
-		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(0);
-
-		// Cube texture coordinates
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[13]);
-		gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(1);
-
-		// Cube normals
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[14]);
-		gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(2);
-
-		// Bind cube texture
-		gl.glActiveTexture(GL_TEXTURE0);
-		gl.glBindTexture(GL_TEXTURE_2D, groundTexture); // Replace with a cube-specific texture if available
-		gl.glUniform1i(sampLoc, 0);
-
-		// Render the cube
-		gl.glDrawArrays(GL_TRIANGLES, 0, 36);
-
-		// ---------------------- Pyramid ----------------------
-		Matrix4f pyramidMat = new Matrix4f();
-		pyramidMat.identity()
-				.translate(-5.0f, 1.5f, -5.0f) // Position pyramid on top of the cube
-				.scale(1.025f, 0.5f, 1.025f); // Adjust scale as needed
-
-		mMat.set(pyramidMat);
-		mMat.invert(invTrMat);
-		invTrMat.transpose(invTrMat);
-
-		// Calculate shadow MVP for the pyramid
-		Matrix4f pyramidShadowMVP = new Matrix4f();
-		pyramidShadowMVP.identity()
-				.mul(b) // Include bias matrix
-				.mul(lightPmat)
-				.mul(lightVmat)
-				.mul(mMat);
-
-		gl.glUniformMatrix4fv(sLoc, 1, false, pyramidShadowMVP.get(vals));
-		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
-		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
-
-		// Pyramid vertices
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[15]);
-		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(0);
-
-		// Pyramid texture coordinates
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[16]);
-		gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(1);
-
-		// Pyramid normals
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[17]);
-		gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
-		gl.glEnableVertexAttribArray(2);
-
-		// Bind pyramid texture
-		gl.glActiveTexture(GL_TEXTURE0);
-		gl.glBindTexture(GL_TEXTURE_2D, groundTexture); // Replace with a pyramid-specific texture if available
-		gl.glUniform1i(sampLoc, 0);
-
-		// Render the pyramid
-		gl.glDrawArrays(GL_TRIANGLES, 0, numPyramidVertices);
-
-		// ---------------------- UFO ----------------------
-		Matrix4f ufoMat = new Matrix4f();
-		ufoMat.identity()
-				.translate(ufoPositionX, ufoPositionY, ufoPositionZ)
-				.scale(0.5f)
-				.rotateY((float) Math.toRadians(ufoRotationY));
-
-		mMat.set(ufoMat);
-		mMat.invert(invTrMat);
-		invTrMat.transpose(invTrMat);
-
-		// Calculate shadow MVP for UFO - include bias matrix
 		Matrix4f ufoShadowMVP = new Matrix4f();
 		ufoShadowMVP.identity()
-				.mul(b) // Include bias matrix - this was missing
+				.mul(b)
 				.mul(lightPmat)
 				.mul(lightVmat)
 				.mul(mMat);
 
-		gl.glUniformMatrix4fv(sLoc, 1, false, ufoShadowMVP.get(vals));
 		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
 		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
 		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
+		gl.glUniformMatrix4fv(sLoc, 1, false, ufoShadowMVP.get(vals));
 
-		// Ufo Vertices
+		// UFO vertices
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[5]);
 		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(0);
 
-		// Ufo Texture
+		// UFO texture coordinates
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[6]);
 		gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(1);
 
-		// Ufo normals
+		// UFO normals
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[7]);
 		gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(2);
 
-		// Binding Texture
+		// Bind textures
 		gl.glActiveTexture(GL_TEXTURE0);
 		gl.glBindTexture(GL_TEXTURE_2D, ufoTexture);
 		gl.glUniform1i(sampLoc, 0);
 
-		// Render
 		gl.glDrawArrays(GL_TRIANGLES, 0, ufoModel.getNumVertices());
 
-		// ---------------------- Cow ----------------------
-		Matrix4f cowMat = new Matrix4f();
-		cowMat.identity()
-				.translate(0, 0.0f, 0) // Adjusted cow position
-				.scale(0.05f)
-				.rotateX((float) Math.toRadians(cowRotationX))
-				.rotateY((float) Math.toRadians(cowRotationY))
-				.rotateY((float) Math.toRadians(-90.0f));
-
-		mMat.set(cowMat);
-		mMat.invert(invTrMat);
-		invTrMat.transpose(invTrMat);
-
-		// Calculate shadow MVP for cow - include bias matrix
-		Matrix4f cowShadowMVP = new Matrix4f();
-		cowShadowMVP.identity()
-				.mul(b) // Include bias matrix - this was missing
-				.mul(lightPmat)
-				.mul(lightVmat)
-				.mul(mMat);
-
-		gl.glUniformMatrix4fv(sLoc, 1, false, cowShadowMVP.get(vals));
-		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
-		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
-		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
-
-		// Set cow material
+		// Draw cow with custom material
 		gl.glProgramUniform4fv(renderingProgram, mambLoc, 1, cowMatAmb, 0);
 		gl.glProgramUniform4fv(renderingProgram, mdiffLoc, 1, cowMatDif, 0);
 		gl.glProgramUniform4fv(renderingProgram, mspecLoc, 1, cowMatSpe, 0);
 		gl.glProgramUniform1f(renderingProgram, mshiLoc, cowMatShi);
 
-		// Cow Vertices
+		mMat.identity();
+		mMat.translate(initialCowPos);
+		mMat.scale(0.05f);
+		mMat.rotateX((float) Math.toRadians(cowRotationX));
+		mMat.rotateY((float) Math.toRadians(cowRotationY));
+		mMat.rotateY((float) Math.toRadians(-90.0f));
+
+		mMat.invert(invTrMat);
+		invTrMat.transpose(invTrMat);
+
+		Matrix4f cowShadowMVP = new Matrix4f();
+		cowShadowMVP.identity()
+				.mul(b)
+				.mul(lightPmat)
+				.mul(lightVmat)
+				.mul(mMat);
+
+		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
+		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
+		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
+		gl.glUniformMatrix4fv(sLoc, 1, false, cowShadowMVP.get(vals));
+
+		// Cow vertices
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[8]);
 		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(0);
 
-		// Cow Texture
+		// Cow texture coordinates
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[9]);
 		gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(1);
@@ -608,38 +457,153 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
 		gl.glEnableVertexAttribArray(2);
 
-		// Binding Texture
+		// Bind textures
 		gl.glActiveTexture(GL_TEXTURE0);
 		gl.glBindTexture(GL_TEXTURE_2D, cowTexture);
 		gl.glUniform1i(sampLoc, 0);
 
-		// Render
 		gl.glDrawArrays(GL_TRIANGLES, 0, cowModel.getNumVertices());
 
-		// Reset material
+		// Reset to default material
 		gl.glProgramUniform4fv(renderingProgram, mambLoc, 1, matAmb, 0);
 		gl.glProgramUniform4fv(renderingProgram, mdiffLoc, 1, matDif, 0);
 		gl.glProgramUniform4fv(renderingProgram, mspecLoc, 1, matSpe, 0);
 		gl.glProgramUniform1f(renderingProgram, mshiLoc, matShi);
 	}
 
+	private void drawSkybox() {
+		GL4 gl = (GL4) GLContext.getCurrentGL();
+
+		// draw skybox cubemap
+		gl.glUseProgram(renderingProgramCubeMap);
+
+		vLoc = gl.glGetUniformLocation(renderingProgramCubeMap, "v_matrix");
+		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+
+		pLoc = gl.glGetUniformLocation(renderingProgramCubeMap, "p_matrix");
+		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[11]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+
+		gl.glActiveTexture(GL_TEXTURE0);
+		gl.glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTexture);
+
+		gl.glEnable(GL_CULL_FACE);
+		gl.glFrontFace(GL_CCW); // cube is CW, but we are viewing the inside
+		gl.glDisable(GL_DEPTH_TEST);
+		gl.glDrawArrays(GL_TRIANGLES, 0, 36);
+		gl.glEnable(GL_DEPTH_TEST);
+	}
+
+	private void drawWorldAxes() {
+		GL4 gl = (GL4) GLContext.getCurrentGL();
+
+		if (!renderAxes)
+			return;
+
+		gl.glUseProgram(renderingProgramNoTex);
+
+		mLoc = gl.glGetUniformLocation(renderingProgramNoTex, "m_matrix");
+		vLoc = gl.glGetUniformLocation(renderingProgramNoTex, "v_matrix");
+		pLoc = gl.glGetUniformLocation(renderingProgramNoTex, "p_matrix");
+		acLoc = gl.glGetUniformLocation(renderingProgramNoTex, "axisColor");
+
+		gl.glEnable(GL_DEPTH_TEST);
+		gl.glDepthFunc(GL_LEQUAL);
+		gl.glEnable(GL_LINE_SMOOTH);
+		gl.glLineWidth(3);
+
+		mMat.identity();
+		mMat.scale(5);
+
+		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
+		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
+
+		// X axis (red)
+		gl.glUniform3f(acLoc, 1.0f, 0.0f, 0.0f);
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[12]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+		gl.glDrawArrays(GL_LINES, 0, 2);
+
+		// Y axis (green)
+		gl.glUniform3f(acLoc, 0.0f, 1.0f, 0.0f);
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[13]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+		gl.glDrawArrays(GL_LINES, 0, 2);
+
+		// Z axis (blue)
+		gl.glUniform3f(acLoc, 0.0f, 0.0f, 1.0f);
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[14]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+		gl.glDrawArrays(GL_LINES, 0, 2);
+	}
+
+	private void drawLight() {
+		GL4 gl = (GL4) GLContext.getCurrentGL();
+
+		if (!renderLight)
+			return;
+
+		gl.glUseProgram(renderingProgramNoTex);
+
+		mLoc = gl.glGetUniformLocation(renderingProgramNoTex, "m_matrix");
+		vLoc = gl.glGetUniformLocation(renderingProgramNoTex, "v_matrix");
+		pLoc = gl.glGetUniformLocation(renderingProgramNoTex, "p_matrix");
+		acLoc = gl.glGetUniformLocation(renderingProgramNoTex, "axisColor");
+
+		gl.glEnable(GL_DEPTH_TEST);
+		gl.glDepthFunc(GL_LEQUAL);
+
+		// Draw a small indicator at light position
+		mMat.identity();
+		mMat.translate(currentLightPos);
+		mMat.scale(0.3f);
+
+		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
+		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
+		gl.glUniform3f(acLoc, 1.0f, 1.0f, 0.0f);
+
+		// Use any model to visualize the light
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[5]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+
+		gl.glDrawArrays(GL_TRIANGLES, 0, ufoModel.getNumVertices());
+	}
+
+	@Override
 	public void init(GLAutoDrawable drawable) {
 		GL4 gl = (GL4) GLContext.getCurrentGL();
 
 		camera = new Camera();
+		camera.setLocation(cameraLoc);
+		camera.lookAt(0, 0, 0);
 
+		// import models and create rendering program by compiling and linking shaders
 		ufoModel = new ImportedModel("ufo.obj");
 		cowModel = new ImportedModel("cow.obj");
 
-		pyramidModel = new ImportedModel("pyr.obj");
+		// Use your own vertex and fragment shaders
+		renderingProgram = Utils.createShaderProgram("a4/blinnPhongShadowVert.glsl",
+				"a4/blinnPhongShadowFrag.glsl");
+		renderingProgramCubeMap = Utils.createShaderProgram("a4/skyboxVert.glsl",
+				"a4/skyboxFrag.glsl");
+		renderingProgramShadow = Utils.createShaderProgram("a4/shadowMapVert.glsl",
+				"a4/shadowMapFrag.glsl");
+		renderingProgramNoTex = Utils.createShaderProgram("a4/notex.vert", "a4/notex.frag");
 
-		renderingProgram = Utils.createShaderProgram("a4/vertShader.glsl", "a4/fragShader.glsl");
-		renderingProgramCubeMap = Utils.createShaderProgram("a4/vertCShader.glsl", "a4/fragCShader.glsl");
+		// set perspective matrix, only changes when screen is resized
+		aspect = (float) myCanvas.getWidth() / (float) myCanvas.getHeight();
+		pMat.setPerspective((float) Math.toRadians(60.0f), aspect, 0.1f, 1000.0f);
 
-		// shadow shaders
-		renderingProgram1 = Utils.createShaderProgram("a4/vert1shader.glsl", "a4/frag1shader.glsl");
-		renderingProgram2 = Utils.createShaderProgram("a4/vert2shader.glsl", "a4/frag2shader.glsl");
-
+		// setup the vertex and texture information for all models in the scene
 		setupVertices();
 		setupShadowBuffers();
 
@@ -649,24 +613,184 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 				0.0f, 0.0f, 0.5f, 0.0f,
 				0.5f, 0.5f, 0.5f, 1.0f);
 
-		startTime = System.currentTimeMillis();
-		prevTime = startTime;
-
-		aspect = (float) myCanvas.getWidth() / (float) myCanvas.getHeight();
-		pMat.setPerspective((float) Math.toRadians(60.0f), aspect, 0.1f, 1000.0f);
-
-		setupVertices();
-
+		// load all textures that will be used
 		ufoTexture = Utils.loadTexture("ufo.png");
 		cowTexture = Utils.loadTexture("cow.png");
 		groundTexture = Utils.loadTexture("ground.jpg");
-		axisTexture = Utils.loadTexture("axis.png");
-		skyboxTexture = Utils.loadCubeMap("cubeMap");
-
+		groundNormalMap = Utils.loadTexture("ground_nmap.jpg");
+		skyboxTexture = Utils.loadCubeMap("cubemap");
 		gl.glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
-		gl.glBindTexture(GL_TEXTURE_2D, groundTexture);
-		gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+		// Initialize light pos
+		currentLightPos.set(initialLightPos);
+	}
+
+	private void setupVertices() {
+		GL4 gl = (GL4) GLContext.getCurrentGL();
+
+		// variables for all models within the scene
+		FloatBuffer vertBuf, texBuf, normBuf, tanBuf;
+		Vector3f[] vertices, normals, tangents;
+		Vector2f[] texCoords;
+		float[] pvalues, tvalues, nvalues, tanvalues;
+
+		// Setup axis lines
+		Vector3f origin = new Vector3f(0, 0, 0);
+		Line worldXAxis = new Line(origin, new Vector3f(1, 0, 0));
+		Line worldYAxis = new Line(origin, new Vector3f(0, 1, 0));
+		Line worldZAxis = new Line(origin, new Vector3f(0, 0, 1));
+		Cube skyBox = new Cube();
+
+		// Ground plane vertices
+		float[] groundVertices = {
+				-10.0f, 0.0f, -10.0f,
+				10.0f, 0.0f, -10.0f,
+				-10.0f, 0.0f, 10.0f,
+				10.0f, 0.0f, -10.0f,
+				10.0f, 0.0f, 10.0f,
+				-10.0f, 0.0f, 10.0f
+		};
+
+		// Ground texture coordinates
+		float[] groundTexCoords = {
+				0.0f, 0.0f,
+				10.0f, 0.0f,
+				0.0f, 10.0f,
+				10.0f, 0.0f,
+				10.0f, 10.0f,
+				0.0f, 10.0f
+		};
+
+		// Ground normals
+		float[] groundNormals = {
+				0.0f, 1.0f, 0.0f,
+				0.0f, 1.0f, 0.0f,
+				0.0f, 1.0f, 0.0f,
+				0.0f, 1.0f, 0.0f,
+				0.0f, 1.0f, 0.0f,
+				0.0f, 1.0f, 0.0f
+		};
+
+		// Ground tangents for normal mapping
+		float[] groundTangents = {
+				1.0f, 0.0f, 0.0f,
+				1.0f, 0.0f, 0.0f,
+				1.0f, 0.0f, 0.0f,
+				1.0f, 0.0f, 0.0f,
+				1.0f, 0.0f, 0.0f,
+				1.0f, 0.0f, 0.0f
+		};
+
+		gl.glGenVertexArrays(vao.length, vao, 0);
+		gl.glBindVertexArray(vao[0]);
+		gl.glGenBuffers(vbo.length, vbo, 0);
+
+		// setup skybox
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[11]);
+		vertBuf = Buffers.newDirectFloatBuffer(skyBox.getVertices());
+		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit() * 4, vertBuf, GL_STATIC_DRAW);
+
+		// setup world axes x, y, and z
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[12]);
+		vertBuf = Buffers.newDirectFloatBuffer(worldXAxis.getVertices());
+		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit() * 4, vertBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[13]);
+		vertBuf = Buffers.newDirectFloatBuffer(worldYAxis.getVertices());
+		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit() * 4, vertBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[14]);
+		vertBuf = Buffers.newDirectFloatBuffer(worldZAxis.getVertices());
+		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit() * 4, vertBuf, GL_STATIC_DRAW);
+
+		// setup ground plane
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+		FloatBuffer groundBuf = Buffers.newDirectFloatBuffer(groundVertices);
+		gl.glBufferData(GL_ARRAY_BUFFER, groundBuf.limit() * 4, groundBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
+		FloatBuffer groundTex = Buffers.newDirectFloatBuffer(groundTexCoords);
+		gl.glBufferData(GL_ARRAY_BUFFER, groundTex.limit() * 4, groundTex, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[2]);
+		FloatBuffer groundNor = Buffers.newDirectFloatBuffer(groundNormals);
+		gl.glBufferData(GL_ARRAY_BUFFER, groundNor.limit() * 4, groundNor, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[3]);
+		FloatBuffer groundTan = Buffers.newDirectFloatBuffer(groundTangents);
+		gl.glBufferData(GL_ARRAY_BUFFER, groundTan.limit() * 4, groundTan, GL_STATIC_DRAW);
+
+		// Setup UFO model
+		int numObjVerticesUfo = ufoModel.getNumVertices();
+		vertices = ufoModel.getVertices();
+		texCoords = ufoModel.getTexCoords();
+		normals = ufoModel.getNormals();
+
+		pvalues = new float[numObjVerticesUfo * 3];
+		tvalues = new float[numObjVerticesUfo * 2];
+		nvalues = new float[numObjVerticesUfo * 3];
+
+		for (int i = 0; i < numObjVerticesUfo; i++) {
+			pvalues[i * 3] = (float) (vertices[i]).x();
+			pvalues[i * 3 + 1] = (float) (vertices[i]).y();
+			pvalues[i * 3 + 2] = (float) (vertices[i]).z();
+
+			tvalues[i * 2] = (float) (texCoords[i]).x();
+			tvalues[i * 2 + 1] = (float) (texCoords[i]).y();
+
+			nvalues[i * 3] = (float) (normals[i]).x();
+			nvalues[i * 3 + 1] = (float) (normals[i]).y();
+			nvalues[i * 3 + 2] = (float) (normals[i]).z();
+		}
+
+		// setup UFO model data
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[5]);
+		vertBuf = Buffers.newDirectFloatBuffer(pvalues);
+		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit() * 4, vertBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[6]);
+		texBuf = Buffers.newDirectFloatBuffer(tvalues);
+		gl.glBufferData(GL_ARRAY_BUFFER, texBuf.limit() * 4, texBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[7]);
+		normBuf = Buffers.newDirectFloatBuffer(nvalues);
+		gl.glBufferData(GL_ARRAY_BUFFER, normBuf.limit() * 4, normBuf, GL_STATIC_DRAW);
+
+		// Setup Cow model
+		int numObjVerticesCow = cowModel.getNumVertices();
+		vertices = cowModel.getVertices();
+		texCoords = cowModel.getTexCoords();
+		normals = cowModel.getNormals();
+
+		pvalues = new float[numObjVerticesCow * 3];
+		tvalues = new float[numObjVerticesCow * 2];
+		nvalues = new float[numObjVerticesCow * 3];
+
+		for (int i = 0; i < numObjVerticesCow; i++) {
+			pvalues[i * 3] = (float) (vertices[i]).x();
+			pvalues[i * 3 + 1] = (float) (vertices[i]).y();
+			pvalues[i * 3 + 2] = (float) (vertices[i]).z();
+
+			tvalues[i * 2] = (float) (texCoords[i]).x();
+			tvalues[i * 2 + 1] = (float) (texCoords[i]).y();
+
+			nvalues[i * 3] = (float) (normals[i]).x();
+			nvalues[i * 3 + 1] = (float) (normals[i]).y();
+			nvalues[i * 3 + 2] = (float) (normals[i]).z();
+		}
+
+		// setup cow model data
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[8]);
+		vertBuf = Buffers.newDirectFloatBuffer(pvalues);
+		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit() * 4, vertBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[9]);
+		texBuf = Buffers.newDirectFloatBuffer(tvalues);
+		gl.glBufferData(GL_ARRAY_BUFFER, texBuf.limit() * 4, texBuf, GL_STATIC_DRAW);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[10]);
+		normBuf = Buffers.newDirectFloatBuffer(nvalues);
+		gl.glBufferData(GL_ARRAY_BUFFER, normBuf.limit() * 4, normBuf, GL_STATIC_DRAW);
 	}
 
 	private void setupShadowBuffers() {
@@ -690,7 +814,7 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	}
 
-	private void installLights() {
+	private void installLights(int renderingProgram) {
 		GL4 gl = (GL4) GLContext.getCurrentGL();
 
 		lightPos[0] = currentLightPos.x();
@@ -711,8 +835,16 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		// set the uniform light and material values in the shader
 		gl.glProgramUniform4fv(renderingProgram, globalAmbLoc, 1, globalAmbient, 0);
 		gl.glProgramUniform4fv(renderingProgram, ambLoc, 1, lightAmbient, 0);
-		gl.glProgramUniform4fv(renderingProgram, diffLoc, 1, lightDiffuse, 0);
-		gl.glProgramUniform4fv(renderingProgram, specLoc, 1, lightSpecular, 0);
+
+		if (renderLight) {
+			gl.glProgramUniform4fv(renderingProgram, diffLoc, 1, lightDiffuse, 0);
+			gl.glProgramUniform4fv(renderingProgram, specLoc, 1, lightSpecular, 0);
+		} else {
+			float[] zeroLight = new float[] { 0.0f, 0.0f, 0.0f, 1.0f };
+			gl.glProgramUniform4fv(renderingProgram, diffLoc, 1, zeroLight, 0);
+			gl.glProgramUniform4fv(renderingProgram, specLoc, 1, zeroLight, 0);
+		}
+
 		gl.glProgramUniform3fv(renderingProgram, posLoc, 1, lightPos, 0);
 		gl.glProgramUniform4fv(renderingProgram, mambLoc, 1, matAmb, 0);
 		gl.glProgramUniform4fv(renderingProgram, mdiffLoc, 1, matDif, 0);
@@ -720,289 +852,9 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 		gl.glProgramUniform1f(renderingProgram, mshiLoc, matShi);
 	}
 
-	private void setupVertices() {
-		GL4 gl = (GL4) GLContext.getCurrentGL();
-
-		float[] cubeVertexPositions = { -1.0f, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f,
-				1.0f, -1.0f, -1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f,
-				1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f, -1.0f,
-				1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1.0f,
-				1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-				-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-				-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, 1.0f, 1.0f,
-				-1.0f, -1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f,
-				-1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, -1.0f,
-				1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, 1.0f,
-				-1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f
-		};
-
-		float[] cube2VertexPositions = {
-				// Front face
-				-1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f,
-				// Back face
-				-1.0f, -1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f,
-				1.0f, 1.0f, -1.0f, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f,
-				// Left face
-				-1.0f, -1.0f, -1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f,
-				-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f,
-				// Right face
-				1.0f, -1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, -1.0f,
-				// Top face
-				-1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f,
-				// Bottom face
-				-1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f,
-				1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, -1.0f
-		};
-
-		// Texture coordinates for the cube
-		float[] cube2TexCoords = {
-				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-				// Repeat for all 6 faces of the cube
-				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-				0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
-				1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f
-		};
-
-		// Normals for the cube
-		float[] cube2Normals = {
-				0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
-				0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
-				// Repeat for all 6 faces of the cube
-				1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-				1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-				0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-				0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-				-1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
-				-1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
-				0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
-				0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
-				0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-				0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f
-		};
-
-		// ---------------------- Pyramid ----------------------
-		numPyramidVertices = pyramidModel.getNumVertices();
-		Vector3f[] pyramidVertices = pyramidModel.getVertices();
-		Vector2f[] pyramidTexCoords = pyramidModel.getTexCoords();
-		Vector3f[] pyramidNormals = pyramidModel.getNormals();
-
-		float[] pvaluesPyramid = new float[numPyramidVertices * 3];
-		float[] tvaluesPyramid = new float[numPyramidVertices * 2];
-		float[] nvaluesPyramid = new float[numPyramidVertices * 3];
-
-		for (int i = 0; i < numPyramidVertices; i++) {
-			pvaluesPyramid[i * 3] = (float) (pyramidVertices[i]).x();
-			pvaluesPyramid[i * 3 + 1] = (float) (pyramidVertices[i]).y();
-			pvaluesPyramid[i * 3 + 2] = (float) (pyramidVertices[i]).z();
-			tvaluesPyramid[i * 2] = (float) (pyramidTexCoords[i]).x();
-			tvaluesPyramid[i * 2 + 1] = (float) (pyramidTexCoords[i]).y();
-			nvaluesPyramid[i * 3] = (float) (pyramidNormals[i]).x();
-			nvaluesPyramid[i * 3 + 1] = (float) (pyramidNormals[i]).y();
-			nvaluesPyramid[i * 3 + 2] = (float) (pyramidNormals[i]).z();
-		}
-
-		// ---------------------- Axis Lines ----------------------
-		float[] axisVertices = {
-				// X
-				0.0f, 0.0f, 0.0f,
-				1.0f, 0.0f, 0.0f,
-
-				// Y
-				0.0f, 0.0f, 0.0f,
-				0.0f, 1.0f, 0.0f,
-
-				// Z
-				0.0f, 0.0f, 0.0f,
-				0.0f, 0.0f, 1.0f
-		};
-
-		float[] axisTexCoords = {
-				// X
-				1.0f, 0.0f,
-				1.0f, 0.0f,
-
-				// Y
-				0.0f, 1.0f,
-				0.0f, 1.0f,
-
-				// Z
-				0.0f, 0.0f,
-				0.0f, 0.0f
-		};
-
-		// ---------------------- Ground ----------------------
-		float[] groundVertices = {
-				-10.0f, 0.0f, -10.0f, // Bottom-left
-				10.0f, 0.0f, -10.0f, // Bottom-right
-				-10.0f, 0.0f, 10.0f, // Top-left
-				10.0f, 0.0f, -10.0f, // Bottom-right
-				10.0f, 0.0f, 10.0f, // Top-right
-				-10.0f, 0.0f, 10.0f // Top-left
-		};
-
-		float[] groundTexCoords = {
-				0.0f, 0.0f, // Bottom-left
-				10.0f, 0.0f, // Bottom-right
-				0.0f, 10.0f, // Top-left
-				10.0f, 0.0f, // Bottom-right
-				10.0f, 10.0f, // Top-right
-				0.0f, 10.0f // Top-left
-		};
-
-		float[] groundNormals = {
-				0.0f, 1.0f, 0.0f,
-				0.0f, 1.0f, 0.0f,
-				0.0f, 1.0f, 0.0f,
-				0.0f, 1.0f, 0.0f,
-				0.0f, 1.0f, 0.0f,
-				0.0f, 1.0f, 0.0f
-		};
-
-		// ---------------------- Ufo ----------------------
-		numObjVerticesUfo = ufoModel.getNumVertices();
-		Vector3f[] ufovertices = ufoModel.getVertices();
-		Vector2f[] ufotexCoords = ufoModel.getTexCoords();
-		Vector3f[] ufonormals = ufoModel.getNormals();
-
-		float[] pvaluesufo = new float[numObjVerticesUfo * 3];
-		float[] tvaluesufo = new float[numObjVerticesUfo * 2];
-		float[] nvaluesufo = new float[numObjVerticesUfo * 3];
-
-		for (int i = 0; i < numObjVerticesUfo; i++) {
-			pvaluesufo[i * 3] = (float) (ufovertices[i]).x();
-			pvaluesufo[i * 3 + 1] = (float) (ufovertices[i]).y();
-			pvaluesufo[i * 3 + 2] = (float) (ufovertices[i]).z();
-			tvaluesufo[i * 2] = (float) (ufotexCoords[i]).x();
-			tvaluesufo[i * 2 + 1] = (float) (ufotexCoords[i]).y();
-			nvaluesufo[i * 3] = (float) (ufonormals[i]).x();
-			nvaluesufo[i * 3 + 1] = (float) (ufonormals[i]).y();
-			nvaluesufo[i * 3 + 2] = (float) (ufonormals[i]).z();
-		}
-
-		// ---------------------- Car ----------------------
-		numObjVerticesCow = cowModel.getNumVertices();
-		Vector3f[] cowvertices = cowModel.getVertices();
-		Vector2f[] cowtexCoords = cowModel.getTexCoords();
-		Vector3f[] cownormals = cowModel.getNormals();
-
-		float[] pvaluescow = new float[numObjVerticesCow * 3];
-		float[] tvaluescow = new float[numObjVerticesCow * 2];
-		float[] nvaluescow = new float[numObjVerticesCow * 3];
-
-		for (int i = 0; i < numObjVerticesCow; i++) {
-			pvaluescow[i * 3] = (float) (cowvertices[i]).x();
-			pvaluescow[i * 3 + 1] = (float) (cowvertices[i]).y();
-			pvaluescow[i * 3 + 2] = (float) (cowvertices[i]).z();
-			tvaluescow[i * 2] = (float) (cowtexCoords[i]).x();
-			tvaluescow[i * 2 + 1] = (float) (cowtexCoords[i]).y();
-			nvaluescow[i * 3] = (float) (cownormals[i]).x();
-			nvaluescow[i * 3 + 1] = (float) (cownormals[i]).y();
-			nvaluescow[i * 3 + 2] = (float) (cownormals[i]).z();
-		}
-
-		// --------------------------------------------
-		gl.glGenVertexArrays(vao.length, vao, 0);
-		gl.glBindVertexArray(vao[0]);
-		gl.glGenBuffers(vbo.length, vbo, 0);
-
-		// ---------------------- Ground ----------------------
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
-		FloatBuffer groundBuf = Buffers.newDirectFloatBuffer(groundVertices);
-		gl.glBufferData(GL_ARRAY_BUFFER, groundBuf.limit() * 4, groundBuf, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
-		FloatBuffer groundTex = Buffers.newDirectFloatBuffer(groundTexCoords);
-		gl.glBufferData(GL_ARRAY_BUFFER, groundTex.limit() * 4, groundTex, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[2]); // Use an unused VBO slot
-		FloatBuffer groundNor = Buffers.newDirectFloatBuffer(groundNormals);
-		gl.glBufferData(GL_ARRAY_BUFFER, groundNor.limit() * 4, groundNor, GL_STATIC_DRAW);
-
-		// ---------------------- Axis Lines ----------------------
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[3]);
-		FloatBuffer axisVertBuf = Buffers.newDirectFloatBuffer(axisVertices);
-		gl.glBufferData(GL_ARRAY_BUFFER, axisVertBuf.limit() * 4, axisVertBuf, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[4]);
-		FloatBuffer axisTexBuf = Buffers.newDirectFloatBuffer(axisTexCoords);
-		gl.glBufferData(GL_ARRAY_BUFFER, axisTexBuf.limit() * 4, axisTexBuf, GL_STATIC_DRAW);
-
-		// ---------------------- Ufo ----------------------
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[5]);
-		FloatBuffer vertBuf = Buffers.newDirectFloatBuffer(pvaluesufo);
-		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit() * 4, vertBuf, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[6]);
-		FloatBuffer texBuf = Buffers.newDirectFloatBuffer(tvaluesufo);
-		gl.glBufferData(GL_ARRAY_BUFFER, texBuf.limit() * 4, texBuf, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[7]);
-		FloatBuffer norBuf = Buffers.newDirectFloatBuffer(nvaluesufo);
-		gl.glBufferData(GL_ARRAY_BUFFER, norBuf.limit() * 4, norBuf, GL_STATIC_DRAW);
-
-		// ---------------------- Cow ----------------------
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[8]);
-		FloatBuffer vertBufCow = Buffers.newDirectFloatBuffer(pvaluescow);
-		gl.glBufferData(GL_ARRAY_BUFFER, vertBufCow.limit() * 4, vertBufCow, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[9]);
-		FloatBuffer texBufCow = Buffers.newDirectFloatBuffer(tvaluescow);
-		gl.glBufferData(GL_ARRAY_BUFFER, texBufCow.limit() * 4, texBufCow, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[10]);
-		FloatBuffer norBufCow = Buffers.newDirectFloatBuffer(nvaluescow);
-		gl.glBufferData(GL_ARRAY_BUFFER, norBufCow.limit() * 4, norBufCow, GL_STATIC_DRAW);
-
-		// ---------------------- Cube ----------------------
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[11]);
-		FloatBuffer cvertBuf = Buffers.newDirectFloatBuffer(cubeVertexPositions);
-		gl.glBufferData(GL_ARRAY_BUFFER, cvertBuf.limit() * 4, cvertBuf, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[12]);
-		FloatBuffer c2vertBuf = Buffers.newDirectFloatBuffer(cube2VertexPositions);
-		gl.glBufferData(GL_ARRAY_BUFFER, c2vertBuf.limit() * 4, c2vertBuf, GL_STATIC_DRAW);
-
-		// Texture coordinates buffer for the cube
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[13]); // Use an unused VBO slot
-		FloatBuffer cube2TexBuf = Buffers.newDirectFloatBuffer(cube2TexCoords);
-		gl.glBufferData(GL_ARRAY_BUFFER, cube2TexBuf.limit() * 4, cube2TexBuf, GL_STATIC_DRAW);
-
-		// Normals buffer for the cube
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[14]); // Use another unused VBO slot
-		FloatBuffer cube2NorBuf = Buffers.newDirectFloatBuffer(cube2Normals);
-		gl.glBufferData(GL_ARRAY_BUFFER, cube2NorBuf.limit() * 4, cube2NorBuf, GL_STATIC_DRAW);
-
-		// ---------------------- Pyramid ----------------------
-		// Bind pyramid data to buffers
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[15]); // Pyramid vertices
-		FloatBuffer pyramidVertBuf = Buffers.newDirectFloatBuffer(pvaluesPyramid);
-		gl.glBufferData(GL_ARRAY_BUFFER, pyramidVertBuf.limit() * 4, pyramidVertBuf, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[16]); // Pyramid texture coordinates
-		FloatBuffer pyramidTexBuf = Buffers.newDirectFloatBuffer(tvaluesPyramid);
-		gl.glBufferData(GL_ARRAY_BUFFER, pyramidTexBuf.limit() * 4, pyramidTexBuf, GL_STATIC_DRAW);
-
-		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[17]); // Pyramid normals
-		FloatBuffer pyramidNorBuf = Buffers.newDirectFloatBuffer(nvaluesPyramid);
-		gl.glBufferData(GL_ARRAY_BUFFER, pyramidNorBuf.limit() * 4, pyramidNorBuf, GL_STATIC_DRAW);
-
-	}
-
 	@Override
 	public void keyTyped(KeyEvent e) {
-
+		// Not used
 	}
 
 	@Override
@@ -1011,48 +863,85 @@ public class Code extends JFrame implements GLEventListener, KeyListener {
 
 		switch (e.getKeyCode()) {
 			case KeyEvent.VK_SPACE:
-				if (visibleAxis) {
-					axesX += 10f;
-				} else {
-					axesX -= 10f;
-				}
-				visibleAxis = !visibleAxis;
+				// Toggle coordinate axes display
+				renderAxes = !renderAxes;
+				break;
+			case KeyEvent.VK_P:
+				// Toggle light on/off
+				renderLight = !renderLight;
 				break;
 			case KeyEvent.VK_I:
-				ufoPositionZ -= speed; // Move forward (negative Z)
+				ufoPositionZ -= speed; // Move UFO forward (negative Z)
 				break;
 			case KeyEvent.VK_K:
-				ufoPositionZ += speed; // Move backward (positive Z)
+				ufoPositionZ += speed; // Move UFO backward (positive Z)
 				break;
 			case KeyEvent.VK_J:
-				ufoPositionX -= speed; // Move left (negative X)
+				ufoPositionX -= speed; // Move UFO left (negative X)
 				break;
 			case KeyEvent.VK_L:
-				ufoPositionX += speed; // Move right (positive X)
+				ufoPositionX += speed; // Move UFO right (positive X)
+				break;
+			case KeyEvent.VK_U:
+				ufoPositionY += speed; // Move UFO up
+				break;
+			case KeyEvent.VK_O:
+				ufoPositionY -= speed; // Move UFO down
 				break;
 
-			default:
-				// camera controls: W, A, S, D, Q, E, and arrow keys
-				camera.handleKeyInput(e.getKeyCode(), (float) deltaTime);
+			// Camera controls
+			case KeyEvent.VK_W:
+				camera.moveForward(speed);
+				break;
+			case KeyEvent.VK_S:
+				camera.moveBackward(speed);
+				break;
+			case KeyEvent.VK_A:
+				camera.strafeLeft(speed);
+				break;
+			case KeyEvent.VK_D:
+				camera.strafeRight(speed);
+				break;
+			case KeyEvent.VK_Q:
+				camera.moveUp(speed);
+				break;
+			case KeyEvent.VK_E:
+				camera.moveDown(speed);
+				break;
+			case KeyEvent.VK_UP:
+				camera.pitch(-speed * 30);
+				break;
+			case KeyEvent.VK_DOWN:
+				camera.pitch(speed * 30);
+				break;
+			case KeyEvent.VK_LEFT:
+				camera.yaw(speed * 30);
+				break;
+			case KeyEvent.VK_RIGHT:
+				camera.yaw(-speed * 30);
 				break;
 		}
 	}
 
 	@Override
 	public void keyReleased(KeyEvent e) {
-
+		// Not used
 	}
 
 	public static void main(String[] args) {
 		new Code();
 	}
 
-	public void dispose(GLAutoDrawable drawable) {
-	}
-
 	public void reshape(GLAutoDrawable drawable, int x, int y, int width, int height) {
+		// remake the perspective matrix when screen is resized, as aspect ratio may
+		// have changed
 		aspect = (float) myCanvas.getWidth() / (float) myCanvas.getHeight();
 		pMat.setPerspective((float) Math.toRadians(60.0f), aspect, 0.1f, 1000.0f);
+
+		setupShadowBuffers();
 	}
 
+	public void dispose(GLAutoDrawable drawable) {
+		// Cleanup resources if needed
+	}
 }
